@@ -6,6 +6,8 @@
 
 [English](./README.md)
 
+> 이 저장소는 [astralhpi/svelte-fast-check](https://github.com/astralhpi/svelte-fast-check)의 포크이며, npm에는 [`@billpeet/svelte-fast-check`](https://www.npmjs.com/package/@billpeet/svelte-fast-check)로 배포됩니다. CLI 명령어는 그대로 `svelte-fast-check`입니다.
+
 ## 왜 svelte-fast-check가 필요한가요?
 
 `svelte-check`가 개발 환경에서 느린 이유는 아래와 같습니다.
@@ -50,9 +52,9 @@ svelte2tsx, svelte/compiler는 svelte-check와 동일한 패키지를 사용합�
 ## 설치
 
 ```bash
-npm install -D svelte-fast-check
+npm install -D @billpeet/svelte-fast-check
 # or
-bun add -D svelte-fast-check
+bun add -D @billpeet/svelte-fast-check
 ```
 
 ## 사용법
@@ -85,7 +87,7 @@ bun svelte-fast-check --incremental
 커스텀 설정이 필요하면 `svelte-fast-check.config.ts` 파일을 만들면 됩니다.
 
 ```typescript
-import type { FastCheckConfig } from 'svelte-fast-check';
+import type { FastCheckConfig } from '@billpeet/svelte-fast-check';
 
 export default {
   srcDir: './src',
@@ -162,7 +164,7 @@ tsgo    svelte/compiler   ← 둘 다 캐시 사용
 ## 제한사항
 
 - **tsgo는 아직 preview 입니다.**
-- **False positive** - 발견한 케이스는 대응해뒀습니다. 추가로 발견하면 [이슈](https://github.com/astralhpi/svelte-fast-check/issues) 남겨주세요.
+- **False positive** - 발견한 케이스는 대응해뒀습니다. 추가로 발견하면 [이슈](https://github.com/billpeet/svelte-fast-check/issues) 남겨주세요.
 
 ## svelte-check와 함께 사용하기
 

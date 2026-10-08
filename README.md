@@ -4,6 +4,8 @@ Up to 24x faster type and Svelte compiler warning checker for Svelte/SvelteKit p
 
 [Korean](./README.ko.md)
 
+> This is a fork of [astralhpi/svelte-fast-check](https://github.com/astralhpi/svelte-fast-check), published to npm as [`@billpeet/svelte-fast-check`](https://www.npmjs.com/package/@billpeet/svelte-fast-check). The CLI command is still `svelte-fast-check`.
+
 ## Status
 
 Experimental — depends on [TypeScript 7 (tsgo)](https://github.com/microsoft/typescript-go) preview. But actively used by the author in production.
@@ -51,9 +53,9 @@ Measured on a 282-file Svelte project (M4 Pro):
 ## Installation
 
 ```bash
-npm install -D svelte-fast-check
+npm install -D @billpeet/svelte-fast-check
 # or
-bun add -D svelte-fast-check
+bun add -D @billpeet/svelte-fast-check
 ```
 
 ## Usage
@@ -105,7 +107,7 @@ Works out of the box for most projects. Automatically reads `paths` and `exclude
 For custom configuration, create `svelte-fast-check.config.ts`:
 
 ```typescript
-import type { FastCheckConfig } from 'svelte-fast-check';
+import type { FastCheckConfig } from '@billpeet/svelte-fast-check';
 
 export default {
   srcDir: './src',
@@ -182,7 +184,7 @@ For these features, use `svelte-check` or `svelte-language-server`.
 ## Limitations
 
 - **tsgo is still in preview.**
-- **False positives** - Known cases are handled. If you find more, please [open an issue](https://github.com/astralhpi/svelte-fast-check/issues).
+- **False positives** - Known cases are handled. If you find more, please [open an issue](https://github.com/billpeet/svelte-fast-check/issues).
 
 ## Using with svelte-check
 
@@ -209,6 +211,8 @@ See also:
 - [typescript-go support request](https://github.com/sveltejs/language-tools/issues/2733) (Blocked)
 
 ## Credits
+
+Forked from [svelte-fast-check](https://github.com/astralhpi/svelte-fast-check) by Song Jaehak (astralhpi).
 
 Built with [svelte2tsx](https://github.com/sveltejs/language-tools/tree/master/packages/svelte2tsx) from [svelte-language-tools](https://github.com/sveltejs/language-tools) and [Svelte compiler](https://github.com/sveltejs/svelte). Inspired by [svelte-check](https://github.com/sveltejs/language-tools/tree/master/packages/svelte-check).
 

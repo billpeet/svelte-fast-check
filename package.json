@@ -1,5 +1,5 @@
 {
-  "name": "svelte-fast-check",
+  "name": "@billpeet/svelte-fast-check",
   "version": "0.4.5",
   "description": "Up to 24x faster type and Svelte compiler warning checker for Svelte/SvelteKit projects using svelte2tsx + tsgo",
   "type": "module",
@@ -59,6 +59,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "svelte",
     "sveltekit",
@@ -69,12 +72,15 @@
   ],
   "license": "MIT",
   "author": "Song Jaehak <astralhpi@gmail.com> (https://github.com/astralhpi)",
+  "contributors": [
+    "billpeet (https://github.com/billpeet)"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/astralhpi/svelte-fast-check.git"
+    "url": "git+https://github.com/billpeet/svelte-fast-check.git"
   },
   "bugs": {
-    "url": "https://github.com/astralhpi/svelte-fast-check/issues"
+    "url": "https://github.com/billpeet/svelte-fast-check/issues"
   },
-  "homepage": "https://github.com/astralhpi/svelte-fast-check#readme"
+  "homepage": "https://github.com/billpeet/svelte-fast-check#readme"
 }
