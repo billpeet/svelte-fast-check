@@ -47,7 +47,7 @@ svelte2tsx, svelte/compiler는 svelte-check와 동일한 패키지를 사용합�
 - **macOS 또는 Linux** (Windows 미지원)
 - **Node.js 22+** 또는 **Bun**
 - Svelte 5+
-- TypeScript 5+
+- 프로젝트에 TypeScript 5 또는 6 (svelte2tsx가 JavaScript API를 사용합니다. 타입 체크용 TypeScript 7은 함께 설치됩니다)
 
 ## 설치
 
@@ -163,7 +163,7 @@ tsgo    svelte/compiler   ← 둘 다 캐시 사용
 
 ## 제한사항
 
-- **tsgo는 아직 preview 입니다.**
+- **TypeScript 7 기준** - 프로젝트에 TypeScript 5나 6이 설치되어 있어도 TypeScript 7 기준으로 체크하므로, `baseUrl`처럼 제거된 옵션은 오류가 납니다.
 - **False positive** - 발견한 케이스는 대응해뒀습니다. 추가로 발견하면 [이슈](https://github.com/billpeet/svelte-fast-check/issues) 남겨주세요.
 
 ## svelte-check와 함께 사용하기

@@ -3,7 +3,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { collectAllSvelteWarnings } from "../src/compiler/collect";
 import {
   convertAllSvelteFiles,
@@ -14,15 +14,8 @@ import type { FastCheckConfig } from "../src/types";
 const require = createRequire(import.meta.url);
 
 function getTsgoPath(): string {
-  try {
-    const nativePreviewPath = require.resolve(
-      "@typescript/native-preview/package.json",
-    );
-    const packageDir = nativePreviewPath.replace("/package.json", "");
-    return `${packageDir}/bin/tsgo.js`;
-  } catch {
-    return "tsgo";
-  }
+  const packageJsonPath = require.resolve("typescript7/package.json");
+  return join(dirname(packageJsonPath), "bin", "tsc");
 }
 
 async function benchmark(projectPath: string) {

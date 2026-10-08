@@ -8,7 +8,7 @@ Up to 24x faster type and Svelte compiler warning checker for Svelte/SvelteKit p
 
 ## Status
 
-Experimental — depends on [TypeScript 7 (tsgo)](https://github.com/microsoft/typescript-go) preview. But actively used by the author in production.
+Experimental. Type checking uses the stable [TypeScript 7](https://github.com/microsoft/typescript-go) native compiler (tsgo).
 
 ## Why svelte-fast-check?
 
@@ -48,7 +48,7 @@ Measured on a 282-file Svelte project (M4 Pro):
 
 - **Node.js 22+** or **Bun**
 - Svelte 5+
-- TypeScript 5+
+- TypeScript 5 or 6 in your project (svelte2tsx needs its JavaScript API; TypeScript 7 is bundled for the type check itself)
 
 ## Installation
 
@@ -183,7 +183,7 @@ For these features, use `svelte-check` or `svelte-language-server`.
 
 ## Limitations
 
-- **tsgo is still in preview.**
+- **TypeScript 7 semantics** - Checking follows TypeScript 7 even if your project installs TypeScript 5 or 6, so removed options such as `baseUrl` are rejected.
 - **False positives** - Known cases are handled. If you find more, please [open an issue](https://github.com/billpeet/svelte-fast-check/issues).
 
 ## Using with svelte-check

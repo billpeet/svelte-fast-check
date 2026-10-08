@@ -54,16 +54,15 @@ export interface TypeCheckInput {
 /** TypeCheck worker output */
 export type TypeCheckOutput = WorkerOutput;
 
+/**
+ * Resolve the TypeScript 7 (native) compiler launcher.
+ *
+ * TypeScript 7 is installed under the `typescript7` alias so it can sit next to
+ * the project's own `typescript` (5.x/6.x), whose JS API svelte2tsx still needs.
+ */
 function getTsgoPath(): string {
-  try {
-    const nativePreviewPath = require.resolve(
-      "@typescript/native-preview/package.json",
-    );
-    const packageDir = dirname(nativePreviewPath);
-    return join(packageDir, "bin", "tsgo.js");
-  } catch {
-    return "tsgo";
-  }
+  const packageJsonPath = require.resolve("typescript7/package.json");
+  return join(dirname(packageJsonPath), "bin", "tsc");
 }
 
 async function run(input: TypeCheckInput): Promise<TypeCheckOutput> {
