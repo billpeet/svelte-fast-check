@@ -15,9 +15,10 @@ import {
 } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename, dirname, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { svelte2tsx } from "svelte2tsx";
 import { glob } from "tinyglobby";
+import ts from "typescript";
 import type {
   ConversionResult,
   FastCheckConfig,
@@ -349,9 +350,21 @@ export async function generateTsconfig(
   // Check if this is a SvelteKit project
   const isSvelteKit = existsSync(resolve(config.rootDir, ".svelte-kit"));
 
-  // Read paths from tsconfig.json, use SvelteKit defaults if not present
-  const tsconfigPaths =
-    (projectTsconfig?.compilerOptions?.paths as Record<string, string[]>) || {};
+  // Read paths from tsconfig.json, use SvelteKit defaults if not present.
+  // They were made absolute while reading, so re-express them relative to the
+  // generated tsconfig's directory.
+  const generatedDir = dirname(tsconfigPath);
+  const relativizeAll = (absolutePaths: string[]) =>
+    absolutePaths.map((p) => toTsconfigRelative(generatedDir, p));
+  const tsconfigPaths = Object.fromEntries(
+    Object.entries(
+      (projectTsconfig?.compilerOptions?.paths as Record<string, string[]>) ||
+        {},
+    ).map(([alias, targets]) => [alias, relativizeAll(targets)]),
+  );
+  const typeRoots = projectTsconfig?.compilerOptions?.typeRoots as
+    | string[]
+    | undefined;
   const defaultPaths: Record<string, string[]> = isSvelteKit
     ? {
         $lib: ["./../src/lib"],
@@ -403,6 +416,7 @@ export async function generateTsconfig(
 
       // paths need to be converted to relative paths
       paths,
+      ...(typeRoots ? { typeRoots: relativizeAll(typeRoots) } : {}),
 
       // Use defaults if lib is not specified
       lib: projectTsconfig?.compilerOptions?.lib || [
@@ -485,68 +499,197 @@ function resolvePatterns(
 }
 
 /**
- * Read project tsconfig.json (recursively resolve extends chain)
- * All include/exclude patterns are resolved relative to rootDir.
+ * Parse a tsconfig file. tsconfig files are JSONC (comments and trailing
+ * commas are allowed), so they are parsed with TypeScript's own reader.
  */
-function readTypesFromTsconfig(
+function parseTsconfigFile(
+  tsconfigPath: string,
+): Record<string, unknown> | null {
+  try {
+    const content = readFileSync(tsconfigPath, "utf-8");
+    const { config } = ts.parseConfigFileTextToJson(tsconfigPath, content);
+    return config && typeof config === "object" ? config : null;
+  } catch {
+    return null;
+  }
+}
+
+/** First candidate that exists as a file, or null */
+function firstExistingFile(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not found, try the next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve a tsconfig `extends` specifier to an absolute file path.
+ *
+ * Follows TypeScript's rules:
+ * - relative or absolute paths resolve against the extending file, with an
+ *   optional `.json` extension
+ * - anything else is looked up in `node_modules`, walking up from the
+ *   extending file (e.g. `@tsconfig/svelte`, or SvelteKit 3's `$app/tsconfig`)
+ */
+export function resolveExtendsPath(
+  specifier: string,
+  fromDir: string,
+): string | null {
+  const candidatesFor = (base: string) =>
+    base.endsWith(".json")
+      ? [base]
+      : [`${base}.json`, resolve(base, "tsconfig.json"), base];
+
+  if (/^\.\.?([/\\]|$)/.test(specifier) || isAbsolute(specifier)) {
+    return firstExistingFile(candidatesFor(resolve(fromDir, specifier)));
+  }
+
+  let dir = fromDir;
+  while (true) {
+    const found = firstExistingFile(
+      candidatesFor(resolve(dir, "node_modules", specifier)),
+    );
+    if (found) return found;
+
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * Make path-valued compiler options absolute, so they keep their meaning when
+ * merged into a tsconfig that lives in a different directory.
+ * `paths` are relative to `baseUrl` if set, otherwise to the tsconfig's directory.
+ */
+function absolutizeCompilerOptions(
+  compilerOptions: Record<string, unknown> | undefined,
+  tsconfigDir: string,
+): Record<string, unknown> | undefined {
+  if (!compilerOptions) return undefined;
+  const result = { ...compilerOptions };
+
+  if (result.paths && typeof result.paths === "object") {
+    const pathsBase =
+      typeof result.baseUrl === "string"
+        ? resolve(tsconfigDir, result.baseUrl)
+        : tsconfigDir;
+    result.paths = Object.fromEntries(
+      Object.entries(result.paths as Record<string, string[]>).map(
+        ([alias, targets]) => [
+          alias,
+          targets.map((target) => resolve(pathsBase, target)),
+        ],
+      ),
+    );
+  }
+
+  if (Array.isArray(result.typeRoots)) {
+    result.typeRoots = (result.typeRoots as string[]).map((typeRoot) =>
+      resolve(tsconfigDir, typeRoot),
+    );
+  }
+
+  return result;
+}
+
+/** Express an absolute path relative to a directory, in tsconfig form */
+function toTsconfigRelative(fromDir: string, absolutePath: string): string {
+  const relativePath = relative(fromDir, absolutePath).replace(/\\/g, "/");
+  if (isAbsolute(relativePath)) return relativePath; // different drive
+  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+}
+
+/**
+ * Read project tsconfig.json, following its `extends` chain.
+ *
+ * - include/exclude patterns are resolved relative to rootDir
+ * - `paths` and `typeRoots` are returned as absolute paths
+ */
+export function readTypesFromTsconfig(
   rootDir: string,
   tsconfigFileName: string = "tsconfig.json",
   tsconfigDir?: string,
 ): ParsedTsconfig | null {
-  const baseDir = tsconfigDir || rootDir;
-  const tsconfigPath = resolve(baseDir, tsconfigFileName);
+  return loadTsconfig(
+    resolve(tsconfigDir || rootDir, tsconfigFileName),
+    rootDir,
+    new Set(),
+  );
+}
+
+/** Unresolved `extends` already warned about (the tsconfig is read more than once per run) */
+const warnedExtends = new Set<string>();
+
+function loadTsconfig(
+  tsconfigPath: string,
+  rootDir: string,
+  seen: Set<string>,
+): ParsedTsconfig | null {
+  // Guard against circular extends
+  if (seen.has(tsconfigPath)) return null;
+  seen.add(tsconfigPath);
+
   if (!existsSync(tsconfigPath)) return null;
+  const tsconfig = parseTsconfigFile(tsconfigPath);
+  if (!tsconfig) return null;
 
-  try {
-    const content = readFileSync(tsconfigPath, "utf-8");
-    const tsconfig = JSON.parse(content);
-    const currentDir = dirname(tsconfigPath);
+  const currentDir = dirname(tsconfigPath);
 
-    // If extends is present, recursively read and merge parent settings
-    if (tsconfig.extends) {
-      const extendsPath = resolve(currentDir, tsconfig.extends);
-      const parentDir = dirname(extendsPath);
-      const parentFileName = basename(extendsPath);
+  // `extends` may be a string or an array; later entries override earlier ones
+  const extendsList = (
+    Array.isArray(tsconfig.extends) ? tsconfig.extends : [tsconfig.extends]
+  ).filter((entry): entry is string => typeof entry === "string");
 
-      const parentTsconfig = readTypesFromTsconfig(
-        rootDir,
-        parentFileName,
-        parentDir,
+  let merged: ParsedTsconfig = {};
+  for (const specifier of extendsList) {
+    const parentPath = resolveExtendsPath(specifier, currentDir);
+    const parent = parentPath ? loadTsconfig(parentPath, rootDir, seen) : null;
+    if (!parent) {
+      const warningKey = `${tsconfigPath}::${specifier}`;
+      if (warnedExtends.has(warningKey)) continue;
+      warnedExtends.add(warningKey);
+      console.warn(
+        `[svelte-fast-check] Warning: Could not resolve "extends": "${specifier}" in ${tsconfigPath}. Its settings will be ignored.`,
       );
-      if (parentTsconfig) {
-        // Resolve current tsconfig's patterns relative to rootDir
-        const resolvedInclude = resolvePatterns(
-          tsconfig.include,
-          currentDir,
-          rootDir,
-        );
-        const resolvedExclude = resolvePatterns(
-          tsconfig.exclude,
-          currentDir,
-          rootDir,
-        );
-
-        return {
-          compilerOptions: {
-            ...parentTsconfig.compilerOptions,
-            ...tsconfig.compilerOptions,
-          },
-          // Use current tsconfig's patterns if present, otherwise parent's (already resolved)
-          include: resolvedInclude || parentTsconfig.include,
-          exclude: resolvedExclude || parentTsconfig.exclude,
-        };
-      }
+      continue;
     }
-
-    // Resolve patterns for non-extended tsconfig
-    return {
-      compilerOptions: tsconfig.compilerOptions,
-      include: resolvePatterns(tsconfig.include, currentDir, rootDir),
-      exclude: resolvePatterns(tsconfig.exclude, currentDir, rootDir),
+    merged = {
+      compilerOptions: { ...merged.compilerOptions, ...parent.compilerOptions },
+      include: parent.include || merged.include,
+      exclude: parent.exclude || merged.exclude,
     };
-  } catch {
-    return null;
   }
+
+  const ownCompilerOptions = absolutizeCompilerOptions(
+    tsconfig.compilerOptions as Record<string, unknown> | undefined,
+    currentDir,
+  );
+  const compilerOptions =
+    merged.compilerOptions || ownCompilerOptions
+      ? { ...merged.compilerOptions, ...ownCompilerOptions }
+      : undefined;
+
+  return {
+    compilerOptions,
+    // Own patterns replace inherited ones (which are already resolved)
+    include:
+      resolvePatterns(
+        tsconfig.include as string[] | undefined,
+        currentDir,
+        rootDir,
+      ) || merged.include,
+    exclude:
+      resolvePatterns(
+        tsconfig.exclude as string[] | undefined,
+        currentDir,
+        rootDir,
+      ) || merged.exclude,
+  };
 }
 
 /**
