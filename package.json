@@ -1,7 +1,7 @@
 {
   "name": "@billpeet/svelte-fast-check",
   "version": "0.4.5",
-  "description": "Up to 24x faster type and Svelte compiler warning checker for Svelte/SvelteKit projects using svelte2tsx + tsgo",
+  "description": "Up to 24x faster type and Svelte compiler warning checker for Svelte/SvelteKit projects using svelte2tsx + tsgo or bun check",
   "type": "module",
   "workspaces": [
     "tests/fixtures/*"
@@ -68,7 +68,8 @@
     "typescript",
     "type-checker",
     "tsgo",
-    "typescript-go"
+    "typescript-go",
+    "bun"
   ],
   "license": "MIT",
   "author": "Song Jaehak <astralhpi@gmail.com> (https://github.com/astralhpi)",

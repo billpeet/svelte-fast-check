@@ -79,6 +79,29 @@ bun svelte-fast-check --incremental
 | `--no-svelte-warnings` |      | Svelte 컴파일러 경고 생략 (타입만 체크)    |
 | `--raw`                | `-r` | 필터링/매핑 없이 원시 출력                 |
 | `--config <path>`      | `-c` | 설정 파일 경로 지정                        |
+| `--backend <name>`     | `-b` | 타입 체커 선택: `tsgo`(기본값) 또는 `bun`  |
+
+### 타입 체커 백엔드
+
+타입 체크 단계는 두 가지 체커 중 하나로 실행할 수 있습니다. 나머지 과정(svelte2tsx, false positive 필터링, sourcemap 매핑, Svelte 컴파일러 경고)은 동일합니다.
+
+| 백엔드          | 체커                                                 | Incremental 빌드 캐시 |
+| --------------- | ---------------------------------------------------- | --------------------- |
+| `tsgo` (기본값) | TypeScript 7 네이티브 컴파일러 (이 패키지와 함께 설치) | 지원                  |
+| `bun`           | Bun 내장 [`bun check`](https://bun.com/docs/runtime/check) | 미지원          |
+
+```bash
+svelte-fast-check --backend bun
+```
+
+`svelte-fast-check.config.ts`에서 `backend: 'bun'`으로 설정할 수도 있습니다.
+
+`bun` 백엔드 참고사항:
+
+- **`bun check`가 포함된 Bun이 필요합니다.** 현재는 canary 빌드(`bun upgrade --canary`)에만 포함되어 있습니다. 이전 버전의 Bun에서는 안내 메시지와 함께 실패합니다.
+- **사용되는 Bun:** `bunPath` 설정, `SVELTE_FAST_CHECK_BUN` 환경 변수, CLI를 실행 중인 Bun(`bun --bun svelte-fast-check`), PATH의 `bun` 순서로 찾습니다.
+- **`--incremental`** 은 변경되지 않은 파일의 svelte2tsx 변환과 Svelte 컴파일을 건너뛰지만, `bun check`에는 빌드 캐시가 없어 타입 체크는 매번 처음부터 실행됩니다.
+- **`package.json`에 `check` 스크립트가 있어도 됩니다.** 원래 `bun check`는 타입 체커 대신 그 스크립트를 실행하지만, svelte-fast-check는 이를 피해서 실행합니다.
 
 ## 설정
 
@@ -163,7 +186,7 @@ tsgo    svelte/compiler   ← 둘 다 캐시 사용
 
 ## 제한사항
 
-- **TypeScript 7 기준** - 프로젝트에 TypeScript 5나 6이 설치되어 있어도 TypeScript 7 기준으로 체크하므로, `baseUrl`처럼 제거된 옵션은 오류가 납니다.
+- **TypeScript 7 기준** - 프로젝트에 TypeScript 5나 6이 설치되어 있어도 TypeScript 7 기준으로 체크합니다. TypeScript 7에서 제거된 `baseUrl`과 `node`/`node10`/`classic` 모듈 해석 방식은 자동으로 변환되며, 그 외 제거된 옵션은 체커의 메시지와 함께 실패합니다.
 - **False positive** - 발견한 케이스는 대응해뒀습니다. 추가로 발견하면 [이슈](https://github.com/billpeet/svelte-fast-check/issues) 남겨주세요.
 
 ## svelte-check와 함께 사용하기

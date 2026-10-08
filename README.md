@@ -99,6 +99,29 @@ Or configure in `package.json`:
 | `--no-svelte-warnings` |       | Skip Svelte compiler warnings (type check only)        |
 | `--raw`                | `-r`  | Show raw output without filtering/mapping              |
 | `--config <path>`      | `-c`  | Specify config file path                               |
+| `--backend <name>`     | `-b`  | Type checker to use: `tsgo` (default) or `bun`         |
+
+### Type checker backends
+
+The type check step can run on either of two checkers. Everything around it (svelte2tsx, false-positive filtering, sourcemap mapping, Svelte compiler warnings) is the same.
+
+| Backend          | Checker                                              | Incremental build cache |
+| ---------------- | ---------------------------------------------------- | ----------------------- |
+| `tsgo` (default) | TypeScript 7 native compiler, installed with this package | Yes                |
+| `bun`            | [`bun check`](https://bun.com/docs/runtime/check), built into Bun | No            |
+
+```bash
+svelte-fast-check --backend bun
+```
+
+Or set it in `svelte-fast-check.config.ts` with `backend: 'bun'`.
+
+Notes on the `bun` backend:
+
+- **Needs a Bun that ships `bun check`.** At the time of writing that means a canary build (`bun upgrade --canary`). With an older Bun the run fails with a message saying so.
+- **Which Bun is used:** the `bunPath` config option, then the `SVELTE_FAST_CHECK_BUN` environment variable, then the Bun running the CLI (`bun --bun svelte-fast-check`), then `bun` on your PATH.
+- **`--incremental`** still skips unchanged svelte2tsx conversions and Svelte compiler runs, but `bun check` has no build cache, so the type check itself always starts from scratch.
+- **A `check` script in your `package.json` is fine.** `bun check` would normally run that script instead of the type checker; svelte-fast-check starts it in a way that avoids this.
 
 ## Configuration
 
@@ -125,7 +148,7 @@ export default {
 
 Two pipelines run in parallel:
 
-1. **Type checking**: svelte2tsx converts `.svelte` to `.tsx`, then tsgo type-checks
+1. **Type checking**: svelte2tsx converts `.svelte` to `.tsx`, then tsgo (or `bun check`) type-checks
 2. **Compiler warnings**: `svelte.compile({ generate: false })` collects Svelte-specific warnings
 
 Both results are merged and displayed together.
@@ -183,7 +206,7 @@ For these features, use `svelte-check` or `svelte-language-server`.
 
 ## Limitations
 
-- **TypeScript 7 semantics** - Checking follows TypeScript 7 even if your project installs TypeScript 5 or 6, so removed options such as `baseUrl` are rejected.
+- **TypeScript 7 semantics** - Checking follows TypeScript 7 even if your project installs TypeScript 5 or 6. `baseUrl` and the `node`/`node10`/`classic` module resolution modes, which TypeScript 7 removed, are translated automatically; other removed options make the run fail with the checker's message.
 - **False positives** - Known cases are handled. If you find more, please [open an issue](https://github.com/billpeet/svelte-fast-check/issues).
 
 ## Using with svelte-check

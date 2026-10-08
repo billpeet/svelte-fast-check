@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { cli } from "cleye";
 import { runFastCheck } from "./index";
+import { isBackendName } from "./typecheck/backends";
 import type { FastCheckConfig } from "./types";
 
 /**
@@ -39,6 +40,11 @@ const argv = cli({
       description: "Disable svelte compiler warnings",
       default: false,
     },
+    backend: {
+      type: String,
+      alias: "b",
+      description: "Type checker to use: tsgo (default) or bun",
+    },
     config: {
       type: String,
       alias: "c",
@@ -61,7 +67,7 @@ const argv = cli({
   },
   help: {
     description:
-      "Fast type checking for Svelte/SvelteKit projects using svelte2tsx + tsgo",
+      "Fast type checking for Svelte/SvelteKit projects using svelte2tsx + tsgo or bun check",
   },
 });
 
@@ -89,6 +95,7 @@ async function main() {
   const {
     incremental,
     raw,
+    backend: backendArg,
     noSvelteWarnings,
     config: configArg,
     project: projectArg,
@@ -100,6 +107,12 @@ async function main() {
   if (configArg?.endsWith(".json")) {
     throw new CliError(
       `--config expects a JavaScript/TypeScript config file (e.g., svelte-fast-check.config.ts)\n       Did you mean --project ${configArg}?`,
+    );
+  }
+
+  if (backendArg !== undefined && !isBackendName(backendArg)) {
+    throw new CliError(
+      `--backend expects "tsgo" or "bun", but got "${backendArg}"`,
     );
   }
 
@@ -158,6 +171,7 @@ async function main() {
   const result = await runFastCheck(config, {
     incremental,
     raw,
+    backend: backendArg,
     svelteWarnings: !noSvelteWarnings,
     useSvelteConfig,
     svelteConfigPath,

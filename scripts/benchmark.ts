@@ -1,30 +1,26 @@
 /**
  * Benchmark script to measure each step's time
  */
-import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { collectAllSvelteWarnings } from "../src/compiler/collect";
+import {
+  type BackendName,
+  isBackendName,
+  runBackend,
+} from "../src/typecheck/backends";
 import {
   convertAllSvelteFiles,
   generateTsconfig,
 } from "../src/typecheck/convert";
 import type { FastCheckConfig } from "../src/types";
 
-const require = createRequire(import.meta.url);
-
-function getTsgoPath(): string {
-  const packageJsonPath = require.resolve("typescript7/package.json");
-  return join(dirname(packageJsonPath), "bin", "tsc");
-}
-
-async function benchmark(projectPath: string) {
+async function benchmark(projectPath: string, backend: BackendName) {
   const config: FastCheckConfig = {
     rootDir: resolve(projectPath),
     srcDir: "./src",
   };
 
-  console.log(`\n📊 Benchmarking: ${projectPath}\n`);
+  console.log(`\n📊 Benchmarking: ${projectPath} (backend: ${backend})\n`);
   console.log("─".repeat(50));
 
   // Step 1: svelte2tsx conversion
@@ -39,15 +35,11 @@ async function benchmark(projectPath: string) {
   const t2 = Math.round(performance.now() - s2);
   console.log(`Generate tsconfig:     ${t2}ms`);
 
-  // Step 3: tsgo type check
-  const tsgoPath = getTsgoPath();
+  // Step 3: type check
   const s3 = performance.now();
-  spawnSync("node", [tsgoPath, "--noEmit", "-p", tsconfigPath], {
-    cwd: config.rootDir,
-    encoding: "utf-8",
-  });
+  await runBackend(backend, { rootDir: config.rootDir, tsconfigPath });
   const t3 = Math.round(performance.now() - s3);
-  console.log(`tsgo type check:       ${t3}ms`);
+  console.log(`${`${backend} type check:`.padEnd(23)}${t3}ms`);
 
   // Step 4: Svelte compiler warnings
   const s4 = performance.now();
@@ -62,10 +54,15 @@ async function benchmark(projectPath: string) {
   console.log("Breakdown:");
   console.log(`  svelte2tsx:  ${((t1 / total) * 100).toFixed(1)}%`);
   console.log(`  tsconfig:    ${((t2 / total) * 100).toFixed(1)}%`);
-  console.log(`  tsgo:        ${((t3 / total) * 100).toFixed(1)}%`);
+  console.log(`  type check:  ${((t3 / total) * 100).toFixed(1)}%`);
   console.log(`  svelte warn: ${((t4 / total) * 100).toFixed(1)}%`);
 }
 
 // Run benchmark
+// Usage: bun scripts/benchmark.ts <project path> [tsgo|bun]
 const projectPath = process.argv[2] || "./benchmark/melting/melting";
-benchmark(projectPath);
+const backendArg = process.argv[3] || "tsgo";
+if (!isBackendName(backendArg)) {
+  throw new Error(`Unknown backend "${backendArg}". Expected "tsgo" or "bun".`);
+}
+benchmark(projectPath, backendArg);

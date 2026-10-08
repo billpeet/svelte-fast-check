@@ -113,6 +113,10 @@ export interface FastCheckConfig {
   svelteKitTypesDir?: string;
   /** @types packages to include (empty array disables auto-loading) */
   types?: string[];
+  /** Type checker to use: "tsgo" (TypeScript 7, default) or "bun" (`bun check`) */
+  backend?: "tsgo" | "bun";
+  /** Bun executable for the bun backend (default: the running Bun, or `bun` on PATH) */
+  bunPath?: string;
 }
 
 /** Common worker output */

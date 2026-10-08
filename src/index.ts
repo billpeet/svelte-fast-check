@@ -20,6 +20,11 @@ export {
   run as runFastCheck,
   type WarningFilter,
 } from "./runner";
+export {
+  BACKEND_NAMES,
+  type BackendName,
+  DEFAULT_BACKEND,
+} from "./typecheck/backends";
 // Re-export utilities for advanced usage
 export {
   buildSourcemapMap,

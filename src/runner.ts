@@ -15,6 +15,11 @@ import {
   printRawDiagnostics,
   printSummary,
 } from "./reporter";
+import {
+  type BackendName,
+  DEFAULT_BACKEND,
+  isBackendName,
+} from "./typecheck/backends";
 import { countDiagnostics } from "./typecheck/parser";
 import type { TypeCheckInput, TypeCheckOutput } from "./typecheck/worker";
 import type { CheckResult, FastCheckConfig } from "./types";
@@ -88,6 +93,8 @@ export interface RunOptions {
   incremental?: boolean;
   /** Raw mode (output without filtering/mapping) */
   raw?: boolean;
+  /** Type checker to use (default: config.backend, then "tsgo") */
+  backend?: BackendName;
   /** Quiet mode (suppress progress output) */
   quiet?: boolean;
   /** Enable svelte compiler warnings (default: true) */
@@ -158,6 +165,7 @@ export async function run(
   const {
     incremental = false,
     raw = false,
+    backend = config.backend ?? DEFAULT_BACKEND,
     quiet = false,
     svelteWarnings = true,
     useSvelteConfig = true,
@@ -165,6 +173,10 @@ export async function run(
     warningFilter: customWarningFilter,
   } = options;
   const startTime = performance.now();
+
+  if (!isBackendName(backend)) {
+    throw new Error(`Unknown backend "${backend}". Expected "tsgo" or "bun".`);
+  }
 
   const log = quiet ? () => {} : console.log.bind(console);
 
@@ -200,7 +212,12 @@ export async function run(
   const compilerWorkerPath = getWorkerPath("compiler");
 
   // Prepare worker inputs
-  const typeCheckInput: TypeCheckInput = { config, incremental, raw };
+  const typeCheckInput: TypeCheckInput = {
+    config,
+    incremental,
+    raw,
+    backend,
+  };
   const compilerInput: CompilerInput = { config, incremental };
 
   // Run workers in parallel
@@ -299,7 +316,7 @@ export async function run(
 
     printSummary(result);
     log(
-      `   (typeCheck: ${typeCheckResult.duration}ms, svelteWarnings: ${compilerResult?.duration ?? 0}ms)`,
+      `   (typeCheck [${backend}]: ${typeCheckResult.duration}ms, svelteWarnings: ${compilerResult?.duration ?? 0}ms)`,
     );
   }
 

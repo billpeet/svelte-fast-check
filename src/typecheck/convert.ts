@@ -35,7 +35,13 @@ const TSX_DIR = "tsx";
 const MAPS_DIR = "maps";
 
 /** Module resolution strategies that need override to bundler */
-const MODULE_RESOLUTIONS_NEEDING_OVERRIDE = ["nodenext", "node16"];
+const MODULE_RESOLUTIONS_NEEDING_OVERRIDE = [
+  "nodenext",
+  "node16",
+  "node",
+  "node10",
+  "classic",
+];
 
 function getCacheRoot(config: FastCheckConfig): string {
   return config.cacheDir || DEFAULT_CACHE_ROOT;
@@ -322,12 +328,22 @@ export function buildSourcemapMap(
 }
 
 export interface GenerateTsconfigOptions {
-  /** Whether to use incremental build (default: true) */
+  /**
+   * Whether to use the type checker's incremental build (default: false).
+   * Only set this for a backend that supports it.
+   */
   incremental?: boolean;
 }
 
 /**
- * Generate .fast-check/tsconfig.json for tsgo
+ * Compiler options that TypeScript 7 removed and rejects outright, but that
+ * have no effect on a noEmit type check. Dropped from the generated tsconfig
+ * so older project configs keep working. (`baseUrl` is handled separately.)
+ */
+const REMOVED_COMPILER_OPTIONS = ["downlevelIteration"];
+
+/**
+ * Generate .fast-check/tsconfig.json for the type checker
  *
  * Why we don't use "extends" in generated tsconfig:
  * - tsgo has compatibility issues with some tsconfig options (rootDirs, certain path resolutions)
@@ -371,8 +387,22 @@ export async function generateTsconfig(
         "$lib/*": ["./../src/lib/*"],
       }
     : {};
-  // Priority: config.paths > tsconfig paths > defaults
+  // TypeScript 7 removed `baseUrl`. Aliases in `paths` were already resolved
+  // against it while reading; bare imports that relied on it are kept working
+  // with a catch-all mapping, as TypeScript's own migration hint suggests.
+  const { baseUrl, ...inheritedCompilerOptions } =
+    projectTsconfig?.compilerOptions ?? {};
+  for (const option of REMOVED_COMPILER_OPTIONS) {
+    delete inheritedCompilerOptions[option];
+  }
+  const baseUrlPaths: Record<string, string[]> =
+    typeof baseUrl === "string"
+      ? { "*": [`${toTsconfigRelative(generatedDir, baseUrl)}/*`] }
+      : {};
+
+  // Priority: config.paths > tsconfig paths > defaults > baseUrl catch-all
   const paths = {
+    ...baseUrlPaths,
     ...defaultPaths,
     ...tsconfigPaths,
     ...config.paths,
@@ -381,7 +411,8 @@ export async function generateTsconfig(
   // NodeNext/Node16 doesn't resolve .svelte to .svelte.tsx, causing false negatives.
   // Override to bundler resolution which handles this correctly.
   // See: https://github.com/astralhpi/svelte-fast-check/issues/5
-  const moduleResolution = projectTsconfig?.compilerOptions?.moduleResolution;
+  // node/node10/classic were removed in TypeScript 7 and get the same override.
+  const moduleResolution = inheritedCompilerOptions.moduleResolution;
   const needsModuleResolutionOverride =
     typeof moduleResolution === "string" &&
     MODULE_RESOLUTIONS_NEEDING_OVERRIDE.includes(
@@ -393,7 +424,7 @@ export async function generateTsconfig(
   const tsconfigContent = {
     compilerOptions: {
       // Settings inherited from project tsconfig
-      ...projectTsconfig?.compilerOptions,
+      ...inheritedCompilerOptions,
 
       // Settings forced by fast-check (overrides)
       noEmit: true,
@@ -564,20 +595,25 @@ export function resolveExtendsPath(
 /**
  * Make path-valued compiler options absolute, so they keep their meaning when
  * merged into a tsconfig that lives in a different directory.
- * `paths` are relative to `baseUrl` if set, otherwise to the tsconfig's directory.
+ * `paths` are relative to `baseUrl` if set (here or in an extended config),
+ * otherwise to the tsconfig's directory.
  */
 function absolutizeCompilerOptions(
   compilerOptions: Record<string, unknown> | undefined,
   tsconfigDir: string,
+  inheritedBaseUrl?: unknown,
 ): Record<string, unknown> | undefined {
   if (!compilerOptions) return undefined;
   const result = { ...compilerOptions };
 
+  if (typeof result.baseUrl === "string") {
+    result.baseUrl = resolve(tsconfigDir, result.baseUrl);
+  }
+
   if (result.paths && typeof result.paths === "object") {
+    const effectiveBaseUrl = result.baseUrl ?? inheritedBaseUrl;
     const pathsBase =
-      typeof result.baseUrl === "string"
-        ? resolve(tsconfigDir, result.baseUrl)
-        : tsconfigDir;
+      typeof effectiveBaseUrl === "string" ? effectiveBaseUrl : tsconfigDir;
     result.paths = Object.fromEntries(
       Object.entries(result.paths as Record<string, string[]>).map(
         ([alias, targets]) => [
@@ -608,7 +644,7 @@ function toTsconfigRelative(fromDir: string, absolutePath: string): string {
  * Read project tsconfig.json, following its `extends` chain.
  *
  * - include/exclude patterns are resolved relative to rootDir
- * - `paths` and `typeRoots` are returned as absolute paths
+ * - `paths`, `typeRoots` and `baseUrl` are returned as absolute paths
  */
 export function readTypesFromTsconfig(
   rootDir: string,
@@ -668,6 +704,7 @@ function loadTsconfig(
   const ownCompilerOptions = absolutizeCompilerOptions(
     tsconfig.compilerOptions as Record<string, unknown> | undefined,
     currentDir,
+    merged.compilerOptions?.baseUrl,
   );
   const compilerOptions =
     merged.compilerOptions || ownCompilerOptions

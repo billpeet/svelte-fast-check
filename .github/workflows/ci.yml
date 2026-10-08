@@ -10,11 +10,15 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, bun ${{ matrix.bun }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        # canary ships `bun check`, which the bun backend tests need;
+        # on latest those tests are skipped
+        bun: [latest, canary]
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +28,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: ${{ matrix.bun }}
 
       - run: bun install
       - run: bun run typecheck

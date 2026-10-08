@@ -1,15 +1,24 @@
 /**
  * TypeCheck Worker
  *
- * Pipeline: svelte2tsx -> tsgo -> filter -> map
+ * Pipeline: svelte2tsx -> type checker (tsgo or bun check) -> filter -> map
  */
 
-import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { relative, resolve } from "node:path";
 import { parentPort } from "node:worker_threads";
 import picomatch from "picomatch";
-import type { FastCheckConfig, MappedDiagnostic, WorkerOutput } from "../types";
+import type {
+  Diagnostic,
+  FastCheckConfig,
+  MappedDiagnostic,
+  WorkerOutput,
+} from "../types";
+import {
+  type BackendName,
+  backendSupportsIncremental,
+  DEFAULT_BACKEND,
+  runBackend,
+} from "./backends";
 import {
   buildSourcemapMap,
   convertAllSvelteFiles,
@@ -23,8 +32,6 @@ import {
 } from "./filter";
 import { filterNegativeLines, mapDiagnostics } from "./mapper";
 import { parseTscOutput } from "./parser";
-
-const require = createRequire(import.meta.url);
 
 /**
  * Filter out diagnostics from excluded file paths.
@@ -49,24 +56,32 @@ export interface TypeCheckInput {
   config: FastCheckConfig;
   incremental: boolean;
   raw: boolean;
+  /** Type checker to use (default: tsgo) */
+  backend?: BackendName;
 }
 
 /** TypeCheck worker output */
 export type TypeCheckOutput = WorkerOutput;
 
 /**
- * Resolve the TypeScript 7 (native) compiler launcher.
- *
- * TypeScript 7 is installed under the `typescript7` alias so it can sit next to
- * the project's own `typescript` (5.x/6.x), whose JS API svelte2tsx still needs.
+ * Diagnostics reported against the generated tsconfig itself (for example a
+ * compiler option the type checker has removed). When the checker hits one of
+ * these it may stop before checking any source file, so they are surfaced as
+ * a failure instead of being listed next to ordinary type errors.
  */
-function getTsgoPath(): string {
-  const packageJsonPath = require.resolve("typescript7/package.json");
-  return join(dirname(packageJsonPath), "bin", "tsc");
+export function findTsconfigErrors(
+  diagnostics: Diagnostic[],
+  rootDir: string,
+  tsconfigPath: string,
+): Diagnostic[] {
+  return diagnostics.filter(
+    (d) => relative(resolve(rootDir, d.file), tsconfigPath) === "",
+  );
 }
 
 async function run(input: TypeCheckInput): Promise<TypeCheckOutput> {
   const { config, incremental, raw } = input;
+  const backend = input.backend ?? DEFAULT_BACKEND;
   const startTime = performance.now();
 
   try {
@@ -75,42 +90,21 @@ async function run(input: TypeCheckInput): Promise<TypeCheckOutput> {
       ? await convertChangedFiles(config)
       : await convertAllSvelteFiles(config);
 
-    // Step 2: Generate tsconfig & run tsgo
-    const tsconfigPath = await generateTsconfig(config, { incremental });
-    const tsgoPath = getTsgoPath();
-
-    // Use spawn instead of spawnSync to avoid ENOBUFS error
-    // spawnSync has buffer size limits, spawn streams output without limits
-    const output = await new Promise<string>((resolve, reject) => {
-      const child = spawn("node", [tsgoPath, "--noEmit", "-p", tsconfigPath], {
-        cwd: config.rootDir,
-      });
-
-      const chunks: Buffer[] = [];
-
-      child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-      child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-      child.on("error", (err) => {
-        reject(new Error(`tsgo execution failed: ${err.message}`));
-      });
-
-      child.on("close", (code) => {
-        const output = Buffer.concat(chunks).toString("utf-8");
-        if (code !== 0 && output.trim() === "") {
-          return reject(
-            new Error(`tsgo execution failed with exit code ${code}.`),
-          );
-        }
-        resolve(output);
-      });
+    // Step 2: Generate tsconfig & run the type checker
+    const tsconfigPath = await generateTsconfig(config, {
+      incremental: incremental && backendSupportsIncremental(backend),
+    });
+    const output = await runBackend(backend, {
+      rootDir: config.rootDir,
+      tsconfigPath,
+      bunPath: config.bunPath,
     });
 
     // Step 3: Parse results
     let diagnostics = parseTscOutput(output);
     diagnostics = diagnostics.map((d) => ({ ...d, source: "ts" as const }));
 
-    // Raw mode: skip filter/map, return tsgo output as-is
+    // Raw mode: skip filter/map, return the type checker's output as-is
     if (raw) {
       return {
         diagnostics: diagnostics.map((d) => ({
@@ -121,6 +115,21 @@ async function run(input: TypeCheckInput): Promise<TypeCheckOutput> {
         })),
         duration: Math.round(performance.now() - startTime),
       };
+    }
+
+    // A rejected tsconfig means little or nothing was actually checked
+    const tsconfigErrors = findTsconfigErrors(
+      diagnostics,
+      config.rootDir,
+      tsconfigPath,
+    );
+    if (tsconfigErrors.length > 0) {
+      const details = tsconfigErrors
+        .map((d) => `  TS${d.code}: ${d.message}`)
+        .join("\n");
+      throw new Error(
+        `The type checker (${backend}) rejected the generated tsconfig (${tsconfigPath}):\n${details}`,
+      );
     }
 
     // Step 4: Filter false positives
